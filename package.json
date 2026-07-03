@@ -1,0 +1,14 @@
+{
+  "name": "owockibot-analytics-api",
+  "version": "1.0.0",
+  "description": "Bounty board analytics API for owockibot — completion rates, time-to-complete, leaderboard, reward distribution, trends.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  }
+}

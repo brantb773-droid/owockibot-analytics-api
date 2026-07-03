@@ -1,0 +1,10 @@
+name = "owockibot-analytics"
+main = "worker.js"
+compatibility_date = "2026-06-01"
+
+# Uncomment once you want real data instead of the built-in seed data.
+# 1. Run: wrangler kv namespace create BOUNTIES_KV
+# 2. Paste the id it prints below.
+# [[kv_namespaces]]
+# binding = "BOUNTIES_KV"
+# id = "PASTE_ID_HERE"
