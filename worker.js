@@ -43,12 +43,50 @@ const SEED_DATA = [
   { id: "b027", title: "Attestation explorer page", category: "design", reward_usdc: 50, status: "completed", builder: "devsam", created_at: "2026-06-15T09:00:00Z", completed_at: "2026-06-19T17:00:00Z" },
 ];
 
+const LIVE_API_URL = "https://bounty.owockibot.xyz/bounties";
+
+// Maps a raw record from the live owockibot API into the shape every
+// compute function below expects.
+function mapOwockiBounty(b) {
+  const rewardUsdc = b.rewardFormatted
+    ? parseFloat(b.rewardFormatted)
+    : Number(b.reward || 0) / 1e6; // API returns reward in micro-USDC (6 decimals)
+
+  return {
+    id: String(b.id ?? b.uuid ?? crypto.randomUUID()),
+    title: b.title || "untitled bounty",
+    category: (Array.isArray(b.tags) && b.tags[0]) || "uncategorized",
+    reward_usdc: rewardUsdc,
+    status: b.status || "unknown", // completed / submitted / claimed / payment_pending / cancelled / open
+    builder: b.claimedBy || null,
+    created_at: b.createdAt ? new Date(b.createdAt).toISOString() : new Date().toISOString(),
+    completed_at: b.completedAt ? new Date(b.completedAt).toISOString() : null,
+  };
+}
+
 async function loadBounties(env) {
+  // 1. Try the live owockibot bounty board first.
+  try {
+    const res = await fetch(LIVE_API_URL, { headers: { accept: "application/json" } });
+    if (res.ok) {
+      const json = await res.json();
+      const list = Array.isArray(json) ? json : json.bounties || json.data || [];
+      if (list.length) {
+        return { bounties: list.map(mapOwockiBounty), source: "live:bounty.owockibot.xyz" };
+      }
+    }
+  } catch (err) {
+    // network hiccup — fall through to KV / seed below
+  }
+
+  // 2. Optional KV override, if you've set one up (see README).
   if (env && env.BOUNTIES_KV) {
     const stored = await env.BOUNTIES_KV.get("bounties", "json");
-    if (stored) return stored;
+    if (stored) return { bounties: stored, source: "kv" };
   }
-  return SEED_DATA;
+
+  // 3. Last resort: bundled seed data, so the API never hard-fails.
+  return { bounties: SEED_DATA, source: "seed-fallback" };
 }
 
 // ---------------------------------------------------------------------------
@@ -231,29 +269,30 @@ export default {
       return jsonResponse(ROUTES["/"]());
     }
 
-    const bounties = await loadBounties(env);
+    const { bounties, source } = await loadBounties(env);
     const weeks = Number(url.searchParams.get("weeks")) || 12;
     const limit = Number(url.searchParams.get("limit")) || 10;
 
     switch (path) {
       case "/api/completion-rates":
-        return jsonResponse({ data: computeCompletionRates(bounties, weeks) });
+        return jsonResponse({ data: computeCompletionRates(bounties, weeks), source });
 
       case "/api/time-to-complete":
-        return jsonResponse({ data: computeTimeToComplete(bounties) });
+        return jsonResponse({ data: computeTimeToComplete(bounties), source });
 
       case "/api/leaderboard":
-        return jsonResponse({ data: computeLeaderboard(bounties, limit) });
+        return jsonResponse({ data: computeLeaderboard(bounties, limit), source });
 
       case "/api/rewards-by-category":
-        return jsonResponse({ data: computeRewardsByCategory(bounties) });
+        return jsonResponse({ data: computeRewardsByCategory(bounties), source });
 
       case "/api/trends":
-        return jsonResponse({ data: computeTrends(bounties, weeks) });
+        return jsonResponse({ data: computeTrends(bounties, weeks), source });
 
       case "/api/overview":
         return jsonResponse({
           generated_at: new Date().toISOString(),
+          source,
           completion_rates: computeCompletionRates(bounties, weeks),
           time_to_complete: computeTimeToComplete(bounties),
           leaderboard: computeLeaderboard(bounties, limit),
